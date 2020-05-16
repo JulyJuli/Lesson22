@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,8 @@ namespace FruitBasket_Console
 {
     public class Program
     {
+        private readonly static object locker = new object();
+
         static void Main(string[] args)
         {
             var randomSeed = new Random();
@@ -47,100 +50,69 @@ namespace FruitBasket_Console
                 Console.WriteLine("4 - Cheater");
                 Console.WriteLine("5 - Uber-Cheater Player"); 
 
-                int type = InputValidation(Console.ReadLine(), 1, 5);
+                int type = InputValidation(Console.ReadLine(), playersDictionary.First().Key, playersDictionary.Last().Key);
 
-                playersList.Add(playersDictionary[type]);
+                playersList.AddPlayerToList(playersDictionary[type]);
             }
 
             var totalTriesList = new List<List<int>>();
 
             playersList.ForEach(player => totalTriesList.Add(player.PersonalTries));
 
-            //var tasksList = Enumerable.Select<Player, Task<int>>(playersList, player => Task.Factory.StartNew<int>());
-
-            //var tasksList = new Task[playersList.Count];
-
-            //for (int i = 0; i < tasksList.Length; i++)
-            //{
-            //    tasksList[i] = Task.Factory.StartNew<int>(playersList[i].Guess);
-            //}
-
-            var threadList = new Thread[playersList.Count];
-
-            for (int i = 0; i < threadList.Length; i++)
-            {
-                threadList[i] = new Thread(() =>
-                {
-                    int newTry = playersList[i].Guess(Basket.MinWeight, Basket.MaxWeight, ref totalTriesList);
-
-                    Console.WriteLine($"{playersList[i].TypeName} {playersList[i].Name} says {newTry}");
-
-                    if (newTry == basket.Weight)
-                    {
-                        Console.WriteLine($"{playersList[i].TypeName} {playersList[i].Name} wins!");
-                        Console.ReadKey();
-                    }
-                });
-
-                //threadList[i].Name = $"Thread {i + 1}";
-            }
-
-            //foreach(var thread in threadList)
-            //{
-            //    thread.Start();
-            //}
-
             //
-            //Let the game begin!
+            //The game starts!
 
-            for (int tries = 1; tries <= 100; tries++)
+            bool isGuessed = false;
+            int counter = 0;
+
+            while (!isGuessed && counter < 100)
             {
-                Console.WriteLine($"Try #{tries}");
-
-                //foreach (var player in playersList)
-                //{
-                //    int newTry = player.Guess(Basket.MinWeight, Basket.MaxWeight, ref totalTriesList);
-
-                //    Console.WriteLine($"{player.TypeName} {player.Name} says {newTry}");
-
-                //    if (newTry == basket.Weight)
-                //    {
-                //        Console.WriteLine($"{player.TypeName} {player.Name} wins!");
-                //        Console.ReadKey();
-                //        return;
-                //    }
-                //}
-
-                foreach (var thread in threadList)
+                foreach (var player in playersList)
                 {
-                    thread.Start();
+                    var guessing = new Task<int>(() => player.Guess(Basket.MinWeight, Basket.MaxWeight, ref totalTriesList));
+
+                    guessing.Start();
+                    var guessedNumber = guessing.Result;
+
+                    Console.WriteLine($"{player.TypeName} {player.Name} says {guessedNumber}");
+
+                    lock (locker)
+                    {
+                        if (guessedNumber == basket.Weight)
+                        {
+                            Console.WriteLine($"*************{player.TypeName} {player.Name} WINS!!!*************");
+                            isGuessed = true;
+                            return;
+                        }
+                    }
                 }
 
-                Console.WriteLine();
+                counter += playersList.Count;
+                Console.WriteLine("-------------------");
             }
 
-            //
-            //If nobody guessed correctly:
-
-
-            //можно ли переделать через linq?
-            var bestTriesList = new List<int>();
-
-            foreach (Player player in playersList)
+            if (!isGuessed)
             {
-                player.BestTry = player.PersonalTries.GetBestTry(basket.Weight);
-                Console.WriteLine($"{player.TypeName} {player.Name}'s closest guess is {player.BestTry}");
+                Console.WriteLine("Nobody guessed");
 
-                bestTriesList.Add(player.BestTry);
-            }
+                List<int> bestTriesList = new List<int>();
 
-            int totalBestTry = bestTriesList.GetBestTry(basket.Weight);
-
-            foreach(Player player in playersList)
-            {
-                if (player.BestTry == totalBestTry)
+                foreach (Player player in playersList)
                 {
-                    Console.WriteLine($"{player.TypeName} {player.Name} wins! Their closest guess is {player.BestTry}");
+                    player.BestTry = player.PersonalTries.GetBestTry(basket.Weight);
+                    Console.WriteLine($"{player.TypeName} {player.Name}'s closest guess is {player.BestTry}");
+
+                    bestTriesList.Add(player.BestTry);
+                }
+
+                int totalBestTry = bestTriesList.GetBestTry(basket.Weight);
+
+                foreach (Player player in playersList)
+                {
+                    if (player.BestTry == totalBestTry)
+                    {
+                        Console.WriteLine($"{player.TypeName} {player.Name} wins! Their closest guess is {player.BestTry}");
+                    }
                 }
             }
 
